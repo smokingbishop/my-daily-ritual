@@ -560,21 +560,6 @@
       </div>
     </div>
 
-    <!-- Pomodoro interval slider — shown when breath anchor expands -->
-    <div id="pomoSliderPanel" style="display:none; margin-bottom:8px;">
-      <div class="pomo-panel" style="background:var(--teal-light); border-color:rgba(29,122,95,0.2);">
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
-          <div style="font-size:13px; font-weight:500; color:var(--teal);">Work block length</div>
-          <div style="font-size:18px; font-weight:500; color:var(--teal);" id="pomoSliderLabel">90 min</div>
-        </div>
-        <input type="range" min="25" max="120" step="5" value="90" id="pomoSlider" oninput="updatePomoSlider(this.value)" style="width:100%; margin-bottom:6px;">
-        <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--ink3);">
-          <span>25 min</span><span>Classic</span><span>Deep work</span><span>2 hr</span>
-        </div>
-        <div style="font-size:11px; color:var(--teal); margin-top:8px;" id="pomoSliderHint">Good for deep creative or strategic work</div>
-      </div>
-    </div>
-
     <!-- Pomodoro cycle panel — appears after breath anchor completes -->
     <div id="pomodoroCyclePanel" style="display:none; margin-bottom:8px;">
       <div class="pomo-panel">
@@ -587,6 +572,18 @@
             <button class="pomo-pill" id="pomoLunchBtn" onclick="toggleLunch()">Lunch pause</button>
             <button class="pomo-pill pomo-stop" onclick="stopCycle()">Stop</button>
           </div>
+        </div>
+        <!-- Work block slider -->
+        <div style="border-top:0.5px solid rgba(91,75,181,0.15); padding-top:10px; margin-bottom:10px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+            <div style="font-size:12px; color:#7B6DC0;">Work block length</div>
+            <div style="font-size:15px; font-weight:500; color:var(--purple);" id="pomoSliderLabel">90 min</div>
+          </div>
+          <input type="range" min="15" max="120" step="15" value="90" id="pomoSlider" oninput="updatePomoSlider(this.value)" style="width:100%; margin-bottom:4px;">
+          <div style="display:flex; justify-content:space-between; font-size:10px; color:rgba(91,75,181,0.5);">
+            <span>15</span><span>45</span><span>75</span><span>120</span>
+          </div>
+          <div style="font-size:11px; color:#7B6DC0; margin-top:6px;" id="pomoSliderHint">Good for deep creative or strategic work</div>
         </div>
         <div class="pomo-dots" id="pomoDots"></div>
       </div>
@@ -841,7 +838,7 @@ function resetDayUI() {
   pomoCount = 0; pomoActive = false; pomoLunchPaused = false;
   if (pomoNextTimeout) { clearTimeout(pomoNextTimeout); pomoNextTimeout = null; }
   if (pomoCountdown) { clearInterval(pomoCountdown); pomoCountdown = null; }
-  document.getElementById('pomoSliderPanel').style.display = 'none';
+  document.getElementById('pomodoroCyclePanel').style.display = 'none';
   var sliderEl = document.getElementById('pomoSlider');
   if (sliderEl) { sliderEl.value = 90; updatePomoSlider(90); }
   // Reset breath anchor timer display
@@ -897,13 +894,7 @@ function markStep(i) {
 function toggleExpand(i) {
   var exp = document.getElementById('exp-' + i);
   if (!exp) return;
-  var isOpen = exp.classList.contains('open');
   exp.classList.toggle('open');
-  // show slider when breath anchor opens
-  if (i === 4) {
-    var slider = document.getElementById('pomoSliderPanel');
-    if (slider) slider.style.display = isOpen ? 'none' : 'block';
-  }
 }
 
 function completeShowerStep() {
@@ -942,9 +933,10 @@ function updatePomoSlider(val) {
   POMO_INTERVAL = val * 60 * 1000;
   document.getElementById('pomoSliderLabel').textContent = val + ' min';
   var hint = '';
-  if (val <= 25) hint = 'Classic Pomodoro — good for varied tasks';
-  else if (val <= 45) hint = 'Short blocks — good for fragmented days';
-  else if (val <= 60) hint = 'Medium blocks — solid for most project work';
+  if (val <= 15) hint = 'Very short — good for high-distraction days';
+  else if (val <= 30) hint = 'Short blocks — good for fragmented days';
+  else if (val <= 45) hint = 'Classic range — solid for varied task work';
+  else if (val <= 75) hint = 'Medium blocks — good for most project work';
   else if (val <= 90) hint = 'Good for deep creative or strategic work';
   else hint = 'Long blocks — best when you need serious flow time';
   document.getElementById('pomoSliderHint').textContent = hint;
@@ -985,7 +977,6 @@ function startBreathTimer(e) {
       btn.style.borderColor = 'var(--teal)';
       document.getElementById('breathSkipRow').style.display = 'none';
       document.getElementById('breathSkipReason').style.display = 'none';
-      document.getElementById('pomoSliderPanel').style.display = 'none';
       applyDone(4);
       persistSteps();
       updateProgress();
@@ -1009,7 +1000,6 @@ function showSkipReason() {
   btn.classList.remove('timer-running');
   document.getElementById('breathSkipRow').style.display = 'none';
   document.getElementById('breathSkipReason').style.display = 'block';
-  document.getElementById('pomoSliderPanel').style.display = 'none';
   selectedSkipReason = '';
 }
 
