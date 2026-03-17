@@ -1083,8 +1083,14 @@ function startWorkBlockCountdown(secs) {
 }
 
 function testFirePomodoro() {
-  // immediately trigger a pomodoro fired event for testing
-  onPomodoroFired(pomoCount + 1);
+  // send through SW if available so notification fires properly
+  if (SW_REG && SW_REG.active && Notification.permission === 'granted') {
+    SW_REG.active.postMessage({ type: 'SCHEDULE_POMODORO', delay: 3000, count: pomoCount + 1 });
+    updatePomoStatus('Test notification in 3 seconds...');
+  } else {
+    // fallback — simulate visually
+    onPomodoroFired(pomoCount + 1);
+  }
 }
 
 function startNextBlock() {
