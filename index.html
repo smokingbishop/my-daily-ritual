@@ -721,55 +721,14 @@ function yesterdayKey() {
 // ── Service Worker & Notifications ───────────────────────────────
 function registerSW() {
   if (!('serviceWorker' in navigator)) return;
-  var swCode = `
-self.addEventListener('install',function(e){self.skipWaiting();});
-self.addEventListener('activate',function(e){e.waitUntil(self.clients.claim());});
-self.addEventListener('message',function(e){
-  var data=e.data;
-  if(data&&data.type==='SCHEDULE_POMODORO'){
-    var delay=data.delay||5400000;
-    var count=data.count||1;
-    setTimeout(function(){
-      self.registration.showNotification('Time for a reset',{
-        body:'90 minutes done. Step away for 2 min — close the loop.',
-        tag:'pomodoro-'+count,
-        requireInteraction:false
-      });
-      self.clients.matchAll().then(function(clients){
-        clients.forEach(function(c){c.postMessage({type:'POMODORO_FIRED',count:count});});
-      });
-    },delay);
-  }
-});
-self.addEventListener('notificationclick',function(e){
-  e.notification.close();
-  if(e.action==='snooze'){
-    e.waitUntil(self.clients.matchAll().then(function(clients){
-      clients.forEach(function(c){c.postMessage({type:'POMODORO_SNOOZE'});});
-      if(clients.length===0){
-        setTimeout(function(){
-          self.registration.showNotification('Snoozed reset reminder',{body:'Take your 2-minute reset now.',tag:'pomo-snooze'});
-        },900000);
-      }
-    }));
-  } else {
-    e.waitUntil(self.clients.matchAll({type:'window'}).then(function(clients){
-      if(clients.length>0){clients[0].focus();}
-      else{self.clients.openWindow('./');}
-    }));
-  }
-});
-  `;
-  var blob = new Blob([swCode], { type: 'application/javascript' });
-  var swUrl = URL.createObjectURL(blob);
-  navigator.serviceWorker.register(swUrl, { scope: './' })
+  navigator.serviceWorker.register('/my-daily-ritual/sw.js', { scope: '/my-daily-ritual/' })
     .then(function(reg) {
       SW_REG = reg;
       navigator.serviceWorker.addEventListener('message', function(e) {
         if (e.data && e.data.type === 'POMODORO_FIRED') onPomodoroFired(e.data.count);
         if (e.data && e.data.type === 'POMODORO_SNOOZE') scheduleNextPomodoro(15 * 60 * 1000);
       });
-    }).catch(function() {});
+    }).catch(function(err) { console.warn('SW registration failed:', err); });
 }
 
 function requestNotifPermission() {
