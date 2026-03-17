@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Your Day</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root {
     --bg: #F5F2ED;
@@ -320,9 +321,27 @@
     text-align: center; padding: 60px 20px;
     font-size: 14px; color: var(--ink3); line-height: 1.7;
   }
-  .empty-state-icon { font-size: 36px; margin-bottom: 12px; }
-
-  /* Pomodoro cycle panel */
+  /* Google Drive status */
+  .drive-status {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 16px;
+    background: var(--teal-light);
+    border: 0.5px solid rgba(29,122,95,0.2);
+    border-radius: var(--radius);
+    margin-bottom: 8px;
+    font-size: 13px; color: var(--teal);
+  }
+  .drive-status.error { background: #FEF2F2; border-color: rgba(220,38,38,0.2); color: #B91C1C; }
+  .drive-status.pending { background: var(--amber-light); border-color: rgba(200,131,42,0.2); color: var(--amber); }
+  .drive-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .drive-connect-btn {
+    margin-left: auto; padding: 4px 12px;
+    border: 0.5px solid currentColor; border-radius: 99px;
+    background: transparent; color: inherit;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px; font-weight: 500; cursor: pointer;
+  }
+</style>
   .pomo-panel {
     background: var(--purple-light);
     border: 0.5px solid rgba(91,75,181,0.2);
@@ -555,6 +574,13 @@
 
     <div class="phase-divider"><span>Evening</span></div>
 
+    <!-- Drive status -->
+    <div id="driveStatus" class="drive-status pending" style="display:none;">
+      <div class="drive-dot"></div>
+      <span id="driveStatusText">Not connected to Drive</span>
+      <button class="drive-connect-btn" id="driveConnectBtn" onclick="driveSignIn()">Connect</button>
+    </div>
+
     <!-- Mind dump card -->
     <div class="panel-card" id="mindDumpCard">
       <div class="panel-title">Mind dump</div>
@@ -703,6 +729,7 @@ function init() {
   loadTodayState();
   renderStreak();
   checkNotifBanner();
+  initDrive();
 }
 
 function setHeader() {
@@ -1000,6 +1027,8 @@ function saveEvening() {
   updateProgress();
   updateStreakForToday();
   renderStreak();
+  // save to Drive in background
+  saveToDrive(today, intent, dump);
   document.getElementById('mindDumpCard').style.display = 'none';
   document.getElementById('completeCard').classList.add('show');
   document.getElementById('completeCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -1118,6 +1147,170 @@ function switchView(name) {
   document.getElementById('view-' + name).classList.add('active');
   document.getElementById('tab-' + name).classList.add('active');
   if (name === 'history') renderHistory();
+}
+
+// ── Google Drive Backup ───────────────────────────────────────────
+var GAPI_CLIENT_ID = '937050563394-nvcjpgn3nfp4n5gd6lbl8bk1j0p6ma3p.apps.googleusercontent.com';
+var GAPI_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+var DRIVE_FOLDER_NAME = 'Daily Ritual';
+var driveAccessToken = null;
+var driveFolderId = null;
+
+function initDrive() {
+  // show the status bar in the evening section
+  document.getElementById('driveStatus').style.display = 'flex';
+  // check if we have a stored token
+  var stored = localStorage.getItem('driveToken');
+  var expiry = localStorage.getItem('driveTokenExpiry');
+  if (stored && expiry && Date.now() < parseInt(expiry)) {
+    driveAccessToken = stored;
+    setDriveStatus('connected', 'Drive connected');
+  } else {
+    setDriveStatus('pending', 'Not connected to Drive');
+  }
+}
+
+function driveSignIn() {
+  if (!window.google) {
+    setDriveStatus('error', 'Google auth not loaded yet — try again');
+    return;
+  }
+  var client = google.accounts.oauth2.initTokenClient({
+    client_id: GAPI_CLIENT_ID,
+    scope: GAPI_SCOPE,
+    callback: function(response) {
+      if (response.error) {
+        setDriveStatus('error', 'Sign-in failed — try again');
+        return;
+      }
+      driveAccessToken = response.access_token;
+      var expiry = Date.now() + (response.expires_in * 1000);
+      localStorage.setItem('driveToken', driveAccessToken);
+      localStorage.setItem('driveTokenExpiry', expiry.toString());
+      setDriveStatus('connected', 'Drive connected');
+    }
+  });
+  client.requestAccessToken();
+}
+
+function setDriveStatus(state, msg) {
+  var el = document.getElementById('driveStatus');
+  var txt = document.getElementById('driveStatusText');
+  var btn = document.getElementById('driveConnectBtn');
+  el.className = 'drive-status ' + (state === 'connected' ? '' : state === 'error' ? 'error' : 'pending');
+  txt.textContent = msg;
+  if (state === 'connected') {
+    btn.textContent = 'Connected ✓';
+    btn.onclick = null;
+    btn.style.opacity = '0.5';
+    btn.style.cursor = 'default';
+  } else {
+    btn.textContent = state === 'error' ? 'Retry' : 'Connect';
+    btn.onclick = driveSignIn;
+    btn.style.opacity = '1';
+    btn.style.cursor = 'pointer';
+  }
+}
+
+function driveRequest(method, url, body, contentType) {
+  return fetch(url, {
+    method: method,
+    headers: {
+      'Authorization': 'Bearer ' + driveAccessToken,
+      'Content-Type': contentType || 'application/json'
+    },
+    body: body ? (typeof body === 'string' ? body : JSON.stringify(body)) : undefined
+  }).then(function(r) { return r.json(); });
+}
+
+function getOrCreateFolder() {
+  if (driveFolderId) return Promise.resolve(driveFolderId);
+  return driveRequest('GET',
+    'https://www.googleapis.com/drive/v3/files?q=' +
+    encodeURIComponent("name='" + DRIVE_FOLDER_NAME + "' and mimeType='application/vnd.google-apps.folder' and trashed=false") +
+    '&fields=files(id,name)'
+  ).then(function(data) {
+    if (data.files && data.files.length > 0) {
+      driveFolderId = data.files[0].id;
+      return driveFolderId;
+    }
+    return driveRequest('POST', 'https://www.googleapis.com/drive/v3/files', {
+      name: DRIVE_FOLDER_NAME,
+      mimeType: 'application/vnd.google-apps.folder'
+    }).then(function(folder) {
+      driveFolderId = folder.id;
+      return driveFolderId;
+    });
+  });
+}
+
+function saveToDrive(dateKey, intention, dump) {
+  if (!driveAccessToken) {
+    setDriveStatus('pending', 'Connect Drive to back up entries');
+    return Promise.resolve();
+  }
+  setDriveStatus('pending', 'Saving to Drive...');
+  var content = [
+    'Date: ' + dateKey,
+    'Intention: ' + (intention || '(none)'),
+    '',
+    'Mind dump:',
+    (dump || '(empty)'),
+    '',
+    '---',
+    'Saved by My Daily Ritual'
+  ].join('\n');
+
+  return getOrCreateFolder().then(function(folderId) {
+    var filename = 'ritual-' + dateKey + '.txt';
+    // check if file exists
+    return driveRequest('GET',
+      'https://www.googleapis.com/drive/v3/files?q=' +
+      encodeURIComponent("name='" + filename + "' and '" + folderId + "' in parents and trashed=false") +
+      '&fields=files(id)'
+    ).then(function(data) {
+      if (data.files && data.files.length > 0) {
+        // update existing
+        var fileId = data.files[0].id;
+        return fetch('https://www.googleapis.com/upload/drive/v3/files/' + fileId + '?uploadType=media', {
+          method: 'PATCH',
+          headers: {
+            'Authorization': 'Bearer ' + driveAccessToken,
+            'Content-Type': 'text/plain'
+          },
+          body: content
+        });
+      } else {
+        // create new with metadata
+        var boundary = 'ritual_boundary_' + Date.now();
+        var meta = JSON.stringify({ name: filename, parents: [folderId] });
+        var multipart = [
+          '--' + boundary,
+          'Content-Type: application/json; charset=UTF-8',
+          '',
+          meta,
+          '--' + boundary,
+          'Content-Type: text/plain',
+          '',
+          content,
+          '--' + boundary + '--'
+        ].join('\r\n');
+        return fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + driveAccessToken,
+            'Content-Type': 'multipart/related; boundary=' + boundary
+          },
+          body: multipart
+        });
+      }
+    });
+  }).then(function() {
+    setDriveStatus('connected', 'Saved to Drive ✓');
+  }).catch(function(err) {
+    console.error('Drive save failed:', err);
+    setDriveStatus('error', 'Drive save failed — check connection');
+  });
 }
 
 // ── Boot ──────────────────────────────────────────────────────────
