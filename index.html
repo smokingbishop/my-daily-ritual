@@ -565,12 +565,26 @@
       <div class="pomo-panel">
         <div class="pomo-header">
           <div>
-            <div class="pomo-title">Pomodoro cycle running</div>
-            <div class="pomo-sub" id="pomoStatusText">Next reset nudge in 90 min</div>
+            <div class="pomo-title" id="pomoPanelTitle">Work block running</div>
+            <div class="pomo-sub" id="pomoStatusText">Next reset nudge coming</div>
           </div>
           <div style="display:flex; gap:8px; align-items:center;">
             <button class="pomo-pill" id="pomoLunchBtn" onclick="toggleLunch()">Lunch pause</button>
             <button class="pomo-pill pomo-stop" onclick="stopCycle()">Stop</button>
+          </div>
+        </div>
+        <!-- Work block countdown — shown during active block -->
+        <div id="workBlockCountdown" style="border-top:0.5px solid rgba(91,75,181,0.15); padding-top:10px; margin-bottom:10px;">
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <div style="font-size:12px; color:#7B6DC0;">Current block</div>
+            <div style="font-size:18px; font-weight:500; color:var(--purple); font-variant-numeric:tabular-nums;" id="workBlockTime">—</div>
+          </div>
+        </div>
+        <!-- Back to work prompt — shown after reset timer completes -->
+        <div id="backToWorkRow" style="display:none; border-top:0.5px solid rgba(91,75,181,0.15); padding-top:10px; margin-bottom:10px;">
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <div style="font-size:13px; color:#7B6DC0;">Reset done. Ready to go?</div>
+            <button class="pomo-pill" onclick="startNextBlock()" style="background:var(--purple); color:white; border-color:var(--purple);">Start next block</button>
           </div>
         </div>
         <!-- Work block slider -->
@@ -585,7 +599,10 @@
           </div>
           <div style="font-size:11px; color:#7B6DC0; margin-top:6px;" id="pomoSliderHint">Good for deep creative or strategic work</div>
         </div>
-        <div class="pomo-dots" id="pomoDots"></div>
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <div class="pomo-dots" id="pomoDots"></div>
+          <button class="pomo-pill pomo-stop" onclick="testFirePomodoro()" style="font-size:10px; opacity:0.5;">Test reset</button>
+        </div>
       </div>
     </div>
 
@@ -1036,6 +1053,9 @@ function logSkipAndContinue() {
 }
 
 // ── Pomodoro cycle ────────────────────────────────────────────────
+var workBlockCountdown = null;
+var workBlockSecondsLeft = 0;
+
 function startPomodoroCycleUI(restored) {
   pomoActive = true;
   document.getElementById('pomodoroCyclePanel').style.display = 'block';
@@ -1043,20 +1063,58 @@ function startPomodoroCycleUI(restored) {
   if (!restored) {
     scheduleNextPomodoro(POMO_INTERVAL);
     pomoSecondsLeft = POMO_INTERVAL / 1000;
+    startWorkBlockCountdown(POMO_INTERVAL / 1000);
   } else {
-    // just show the panel, don't reschedule (SW handles it)
     updatePomoStatus('Cycle restored — next nudge coming');
   }
   startPomoCountdown(restored ? 0 : POMO_INTERVAL / 1000);
 }
 
+function startWorkBlockCountdown(secs) {
+  if (workBlockCountdown) clearInterval(workBlockCountdown);
+  workBlockSecondsLeft = secs;
+  document.getElementById('backToWorkRow').style.display = 'none';
+  document.getElementById('workBlockCountdown').style.display = 'block';
+  document.getElementById('pomoPanelTitle').textContent = 'Work block running';
+  // set initial display immediately
+  var initM = Math.floor(secs / 60);
+  var initS = secs % 60;
+  document.getElementById('workBlockTime').textContent = initM + ':' + String(initS).padStart(2,'0');
+  workBlockCountdown = setInterval(function() {
+    if (pomoLunchPaused) return;
+    workBlockSecondsLeft--;
+    if (workBlockSecondsLeft <= 0) {
+      clearInterval(workBlockCountdown);
+      document.getElementById('workBlockCountdown').style.display = 'none';
+      return;
+    }
+    var h = Math.floor(workBlockSecondsLeft / 3600);
+    var m = Math.floor((workBlockSecondsLeft % 3600) / 60);
+    var s = workBlockSecondsLeft % 60;
+    var display = h > 0
+      ? h + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0')
+      : m + ':' + String(s).padStart(2,'0');
+    document.getElementById('workBlockTime').textContent = display;
+  }, 1000);
+}
+
+function testFirePomodoro() {
+  // immediately trigger a pomodoro fired event for testing
+  onPomodoroFired(pomoCount + 1);
+}
+
+function startNextBlock() {
+  document.getElementById('backToWorkRow').style.display = 'none';
+  scheduleNextPomodoro(POMO_INTERVAL);
+  startPomoCountdown(POMO_INTERVAL / 1000);
+  startWorkBlockCountdown(POMO_INTERVAL / 1000);
+}
+
 function scheduleNextPomodoro(delayMs) {
   if (pomoNextTimeout) clearTimeout(pomoNextTimeout);
-  // Use SW if available and permission granted
   if (SW_REG && SW_REG.active && Notification.permission === 'granted') {
     SW_REG.active.postMessage({ type: 'SCHEDULE_POMODORO', delay: delayMs, count: pomoCount + 1 });
   } else {
-    // fallback: in-page timeout (only works if app stays open)
     pomoNextTimeout = setTimeout(function() {
       onPomodoroFired(pomoCount + 1);
     }, delayMs);
@@ -1067,13 +1125,18 @@ function onPomodoroFired(count) {
   pomoCount = count;
   persistSteps();
   renderPomoDots();
-  updatePomoStatus('Reset nudge fired — take 2 min now');
-  // open pomodoro expand
+  // stop work block countdown, show back to work prompt
+  if (workBlockCountdown) { clearInterval(workBlockCountdown); workBlockCountdown = null; }
+  document.getElementById('workBlockCountdown').style.display = 'none';
+  document.getElementById('backToWorkRow').style.display = 'block';
+  document.getElementById('pomoPanelTitle').textContent = 'Reset time';
+  updatePomoStatus('Take 5 min — step away');
+  // open pomodoro step
   var exp = document.getElementById('exp-5');
   if (exp) exp.classList.add('open');
-  // restart countdown for next interval
-  startPomoCountdown(POMO_INTERVAL / 1000);
-  scheduleNextPomodoro(POMO_INTERVAL);
+  // scroll panel into view
+  var panel = document.getElementById('pomodoroCyclePanel');
+  if (panel) setTimeout(function() { panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 100);
 }
 
 function startPomoCountdown(secs) {
@@ -1127,6 +1190,7 @@ function stopCycle() {
   pomoActive = false;
   if (pomoNextTimeout) { clearTimeout(pomoNextTimeout); pomoNextTimeout = null; }
   if (pomoCountdown) { clearInterval(pomoCountdown); pomoCountdown = null; }
+  if (workBlockCountdown) { clearInterval(workBlockCountdown); workBlockCountdown = null; }
   document.getElementById('pomodoroCyclePanel').style.display = 'none';
 }
 
