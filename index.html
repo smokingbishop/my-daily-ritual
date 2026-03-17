@@ -695,8 +695,6 @@ var pomoCount = 0;
 var pomoLunchPaused = false;
 var pomoActive = false;
 var pomoNextTimeout = null;
-var pomoCountdown = null;
-var pomoSecondsLeft = 0;
 var SW_REG = null;
 
 function getState() {
@@ -771,7 +769,7 @@ function requestNotifPermission() {
   if (!('Notification' in window)) return;
   Notification.requestPermission().then(function(p) {
     document.getElementById('notifBanner').style.display = 'none';
-    if (p === 'granted' && pomoActive) scheduleNextPomodoro(pomoSecondsLeft > 0 ? pomoSecondsLeft * 1000 : POMO_INTERVAL);
+    if (p === 'granted' && pomoActive) scheduleNextPomodoro(POMO_INTERVAL);
   });
 }
 
@@ -854,7 +852,7 @@ function resetDayUI() {
   // Reset pomodoro state
   pomoCount = 0; pomoActive = false; pomoLunchPaused = false;
   if (pomoNextTimeout) { clearTimeout(pomoNextTimeout); pomoNextTimeout = null; }
-  if (pomoCountdown) { clearInterval(pomoCountdown); pomoCountdown = null; }
+  if (workBlockCountdown) { clearInterval(workBlockCountdown); workBlockCountdown = null; }
   document.getElementById('pomodoroCyclePanel').style.display = 'none';
   var sliderEl = document.getElementById('pomoSlider');
   if (sliderEl) { sliderEl.value = 90; updatePomoSlider(90); }
@@ -1064,12 +1062,11 @@ function startPomodoroCycleUI(restored) {
   renderPomoDots();
   if (!restored) {
     scheduleNextPomodoro(POMO_INTERVAL);
-    pomoSecondsLeft = POMO_INTERVAL / 1000;
     startWorkBlockCountdown(POMO_INTERVAL / 1000);
+    updatePomoStatus('Work block started');
   } else {
-    updatePomoStatus('Cycle restored — next nudge coming');
+    updatePomoStatus('Cycle restored');
   }
-  startPomoCountdown(restored ? 0 : POMO_INTERVAL / 1000);
 }
 
 function startWorkBlockCountdown(secs) {
@@ -1106,13 +1103,11 @@ function testFirePomodoro() {
 }
 
 function startNextBlock() {
-  // guard — reset must be checked
   if (!stepDone[5]) return;
   document.getElementById('backToWorkRow').style.display = 'none';
   scheduleNextPomodoro(POMO_INTERVAL);
-  startPomoCountdown(POMO_INTERVAL / 1000);
   startWorkBlockCountdown(POMO_INTERVAL / 1000);
-  // uncheck reset ready for next round
+  updatePomoStatus('Work block started');
   unchecResetStep();
 }
 
@@ -1177,20 +1172,6 @@ function onPomodoroFired(count) {
   if (resetCard) setTimeout(function() { resetCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 100);
 }
 
-function startPomoCountdown(secs) {
-  if (pomoCountdown) clearInterval(pomoCountdown);
-  if (secs <= 0) return;
-  pomoSecondsLeft = secs;
-  pomoCountdown = setInterval(function() {
-    if (pomoLunchPaused) return;
-    pomoSecondsLeft--;
-    if (pomoSecondsLeft <= 0) { clearInterval(pomoCountdown); return; }
-    var m = Math.floor(pomoSecondsLeft / 60);
-    var s = pomoSecondsLeft % 60;
-    updatePomoStatus('Next reset in ' + m + ':' + (s < 10 ? '0' : '') + s);
-  }, 1000);
-}
-
 function updatePomoStatus(txt) {
   var el = document.getElementById('pomoStatusText');
   if (el) el.textContent = txt;
@@ -1220,14 +1201,14 @@ function toggleLunch() {
     btn.textContent = 'Lunch pause';
     btn.classList.remove('paused');
     scheduleNextPomodoro(POMO_INTERVAL);
-    startPomoCountdown(POMO_INTERVAL / 1000);
+    startWorkBlockCountdown(POMO_INTERVAL / 1000);
+    updatePomoStatus('Work block started');
   }
 }
 
 function stopCycle() {
   pomoActive = false;
   if (pomoNextTimeout) { clearTimeout(pomoNextTimeout); pomoNextTimeout = null; }
-  if (pomoCountdown) { clearInterval(pomoCountdown); pomoCountdown = null; }
   if (workBlockCountdown) { clearInterval(workBlockCountdown); workBlockCountdown = null; }
   document.getElementById('pomodoroCyclePanel').style.display = 'none';
 }
