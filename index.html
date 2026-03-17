@@ -573,6 +573,13 @@
             <button class="pomo-pill pomo-stop" onclick="stopCycle()">Stop</button>
           </div>
         </div>
+        <!-- Start first block prompt — shown when cycle first opens -->
+        <div id="startFirstBlockRow" style="border-top:0.5px solid rgba(91,75,181,0.15); padding-top:10px; margin-bottom:10px;">
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <div style="font-size:13px; color:#7B6DC0;">Ready to begin?</div>
+            <button class="pomo-pill" onclick="startFirstBlock()" style="background:var(--purple); color:white; border-color:var(--purple);">Start work block</button>
+          </div>
+        </div>
         <!-- Work block countdown — shown during active block -->
         <div id="workBlockCountdown" style="border-top:0.5px solid rgba(91,75,181,0.15); padding-top:10px; margin-bottom:10px;">
           <div style="display:flex; align-items:center; justify-content:space-between;">
@@ -853,7 +860,8 @@ function resetDayUI() {
   pomoCount = 0; pomoActive = false; pomoLunchPaused = false;
   if (pomoNextTimeout) { clearTimeout(pomoNextTimeout); pomoNextTimeout = null; }
   if (workBlockCountdown) { clearInterval(workBlockCountdown); workBlockCountdown = null; }
-  document.getElementById('pomodoroCyclePanel').style.display = 'none';
+  var sfb = document.getElementById('startFirstBlockRow');
+  if (sfb) sfb.style.display = 'none';
   var sliderEl = document.getElementById('pomoSlider');
   if (sliderEl) { sliderEl.value = 90; updatePomoSlider(90); }
   // Reset breath anchor timer display
@@ -1059,14 +1067,25 @@ var workBlockSecondsLeft = 0;
 function startPomodoroCycleUI(restored) {
   pomoActive = true;
   document.getElementById('pomodoroCyclePanel').style.display = 'block';
+  document.getElementById('workBlockCountdown').style.display = 'none';
+  document.getElementById('backToWorkRow').style.display = 'none';
   renderPomoDots();
   if (!restored) {
-    scheduleNextPomodoro(POMO_INTERVAL);
-    startWorkBlockCountdown(POMO_INTERVAL / 1000);
-    updatePomoStatus('Work block started');
+    // show the start prompt — user taps to begin first block
+    document.getElementById('startFirstBlockRow').style.display = 'block';
+    document.getElementById('pomoPanelTitle').textContent = 'Pomodoro cycle ready';
+    updatePomoStatus('Tap to start your first work block');
   } else {
+    document.getElementById('startFirstBlockRow').style.display = 'none';
     updatePomoStatus('Cycle restored');
   }
+}
+
+function startFirstBlock() {
+  document.getElementById('startFirstBlockRow').style.display = 'none';
+  scheduleNextPomodoro(POMO_INTERVAL);
+  startWorkBlockCountdown(POMO_INTERVAL / 1000);
+  updatePomoStatus('Work block started');
 }
 
 function startWorkBlockCountdown(secs) {
