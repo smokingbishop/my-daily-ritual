@@ -1094,6 +1094,9 @@ function startWorkBlockCountdown(secs) {
   document.getElementById('backToWorkRow').style.display = 'none';
   document.getElementById('workBlockCountdown').style.display = 'block';
   document.getElementById('pomoPanelTitle').textContent = 'Work block running';
+  // lock the reset step while work block is active
+  var resetCard = document.getElementById('step-5');
+  if (resetCard) resetCard.classList.add('locked');
   // set initial display immediately
   var initM = Math.floor(secs / 60);
   var initS = secs % 60;
@@ -1103,7 +1106,11 @@ function startWorkBlockCountdown(secs) {
     workBlockSecondsLeft--;
     if (workBlockSecondsLeft <= 0) {
       clearInterval(workBlockCountdown);
+      workBlockCountdown = null;
       document.getElementById('workBlockCountdown').style.display = 'none';
+      // unlock the reset step
+      var rc = document.getElementById('step-5');
+      if (rc) rc.classList.remove('locked');
       return;
     }
     var h = Math.floor(workBlockSecondsLeft / 3600);
@@ -1184,8 +1191,10 @@ function onPomodoroFired(count) {
   renderPomoDots();
   // uncheck the reset step so it must be completed again
   unchecResetStep();
-  // stop work block countdown, show back to work prompt
+  // stop work block countdown, unlock reset step, show back to work prompt
   if (workBlockCountdown) { clearInterval(workBlockCountdown); workBlockCountdown = null; }
+  var resetCard = document.getElementById('step-5');
+  if (resetCard) resetCard.classList.remove('locked');
   document.getElementById('workBlockCountdown').style.display = 'none';
   document.getElementById('backToWorkRow').style.display = 'block';
   document.getElementById('pomoPanelTitle').textContent = 'Reset time';
@@ -1236,6 +1245,22 @@ function toggleLunch() {
 }
 
 function stopCycle() {
+  // soft stop — cancel current block and return to ready state
+  if (pomoNextTimeout) { clearTimeout(pomoNextTimeout); pomoNextTimeout = null; }
+  if (workBlockCountdown) { clearInterval(workBlockCountdown); workBlockCountdown = null; }
+  // unlock reset step
+  var resetCard = document.getElementById('step-5');
+  if (resetCard) resetCard.classList.remove('locked');
+  // hide countdowns and back-to-work row
+  document.getElementById('workBlockCountdown').style.display = 'none';
+  document.getElementById('backToWorkRow').style.display = 'none';
+  // show ready to begin again
+  document.getElementById('startFirstBlockRow').style.display = 'block';
+  document.getElementById('pomoPanelTitle').textContent = 'Pomodoro cycle ready';
+  updatePomoStatus('Tap to start your next work block');
+}
+
+function closeCycleForDay() {
   pomoActive = false;
   if (pomoNextTimeout) { clearTimeout(pomoNextTimeout); pomoNextTimeout = null; }
   if (workBlockCountdown) { clearInterval(workBlockCountdown); workBlockCountdown = null; }
@@ -1254,7 +1279,7 @@ function saveEvening() {
   state[today].eveningSaved = true;
   state[today].steps = stepDone;
   saveState(state);
-  stopCycle();
+  closeCycleForDay();
   for (var i = 0; i < 6; i++) applyDone(i);
   persistSteps();
   updateProgress();
@@ -1277,6 +1302,12 @@ function updateProgress() {
 // ── Generic timers ────────────────────────────────────────────────
 function startTimer(e, idx, secs) {
   e.stopPropagation();
+  // block reset timer if work block is actively running
+  if (idx === 5 && workBlockCountdown) {
+    var disp = document.getElementById('tdisp-' + idx);
+    if (disp) { var prev = disp.textContent; disp.textContent = 'Finish block first'; setTimeout(function() { disp.textContent = prev; }, 2000); }
+    return;
+  }
   if (TIMER_IDS[idx]) { clearInterval(TIMER_IDS[idx]); delete TIMER_IDS[idx]; }
   TIMER_REM[idx] = secs;
   var btn = document.getElementById('tbtn-' + idx);
