@@ -1573,8 +1573,16 @@ function getOrCreateFolder() {
 }
 
 function saveToDrive(dateKey, intention, dump) {
-  if (!driveAccessToken) {
-    setDriveStatus('pending', 'Connect Drive to back up entries');
+  // check token is still valid before attempting
+  var expiry = localStorage.getItem('driveTokenExpiry');
+  if (!driveAccessToken || !expiry || Date.now() >= parseInt(expiry) - 60000) {
+    driveAccessToken = null;
+    localStorage.removeItem('driveToken');
+    localStorage.removeItem('driveTokenExpiry');
+    setDriveStatus('pending', 'Session expired — reconnect Drive');
+    // show connect button again
+    var btn = document.getElementById('driveConnectBtn');
+    if (btn) { btn.textContent = 'Reconnect'; btn.onclick = driveSignIn; btn.style.opacity = '1'; btn.style.cursor = 'pointer'; }
     return Promise.resolve();
   }
   setDriveStatus('pending', 'Saving to Drive...');
@@ -1591,14 +1599,12 @@ function saveToDrive(dateKey, intention, dump) {
 
   return getOrCreateFolder().then(function(folderId) {
     var filename = 'ritual-' + dateKey + '.txt';
-    // check if file exists
     return driveRequest('GET',
       'https://www.googleapis.com/drive/v3/files?q=' +
       encodeURIComponent("name='" + filename + "' and '" + folderId + "' in parents and trashed=false") +
       '&fields=files(id)'
     ).then(function(data) {
       if (data.files && data.files.length > 0) {
-        // update existing
         var fileId = data.files[0].id;
         return fetch('https://www.googleapis.com/upload/drive/v3/files/' + fileId + '?uploadType=media', {
           method: 'PATCH',
@@ -1609,7 +1615,6 @@ function saveToDrive(dateKey, intention, dump) {
           body: content
         });
       } else {
-        // create new with metadata
         var boundary = 'ritual_boundary_' + Date.now();
         var meta = JSON.stringify({ name: filename, parents: [folderId] });
         var multipart = [
@@ -1633,11 +1638,15 @@ function saveToDrive(dateKey, intention, dump) {
         });
       }
     });
-  }).then(function() {
-    setDriveStatus('connected', 'Saved to Drive ✓');
+  }).then(function(response) {
+    if (response && (response.status === 200 || response.status === 201)) {
+      setDriveStatus('connected', 'Saved to Drive ✓ — ' + dateKey);
+    } else {
+      setDriveStatus('error', 'Drive save failed (status ' + (response ? response.status : '?') + ') — try reconnecting');
+    }
   }).catch(function(err) {
     console.error('Drive save failed:', err);
-    setDriveStatus('error', 'Drive save failed — check connection');
+    setDriveStatus('error', 'Drive save failed — check connection and reconnect');
   });
 }
 
