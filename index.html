@@ -724,10 +724,14 @@ function registerSW() {
   navigator.serviceWorker.register('/my-daily-ritual/sw.js', { scope: '/my-daily-ritual/' })
     .then(function(reg) {
       SW_REG = reg;
-      navigator.serviceWorker.addEventListener('message', function(e) {
-        if (e.data && e.data.type === 'POMODORO_FIRED') onPomodoroFired(e.data.count);
-        if (e.data && e.data.type === 'POMODORO_SNOOZE') scheduleNextPomodoro(15 * 60 * 1000);
-      });
+    navigator.serviceWorker.addEventListener('message', function(e) {
+      if (e.data && e.data.type === 'POMODORO_FIRED') {
+        // clear fallback timeout — SW fired first
+        if (pomoNextTimeout) { clearTimeout(pomoNextTimeout); pomoNextTimeout = null; }
+        onPomodoroFired(e.data.count);
+      }
+      if (e.data && e.data.type === 'POMODORO_SNOOZE') scheduleNextPomodoro(15 * 60 * 1000);
+    });
     }).catch(function(err) { console.warn('SW registration failed:', err); });
 }
 
@@ -1186,12 +1190,17 @@ function updateNextBlockBtn() {
 }
 
 function scheduleNextPomodoro(delayMs) {
-  if (pomoNextTimeout) clearTimeout(pomoNextTimeout);
+  if (pomoNextTimeout) { clearTimeout(pomoNextTimeout); pomoNextTimeout = null; }
+  var expectedCount = pomoCount + 1;
   if (SW_REG && SW_REG.active && Notification.permission === 'granted') {
-    SW_REG.active.postMessage({ type: 'SCHEDULE_POMODORO', delay: delayMs, count: pomoCount + 1 });
+    SW_REG.active.postMessage({ type: 'SCHEDULE_POMODORO', delay: delayMs, count: expectedCount });
+    // also set a fallback in-page timeout slightly after in case SW message is lost
+    pomoNextTimeout = setTimeout(function() {
+      onPomodoroFired(expectedCount);
+    }, delayMs + 5000);
   } else {
     pomoNextTimeout = setTimeout(function() {
-      onPomodoroFired(pomoCount + 1);
+      onPomodoroFired(expectedCount);
     }, delayMs);
   }
 }
