@@ -824,6 +824,8 @@ function resetDayUI() {
   pomoCount = 0; pomoActive = false; pomoLunchPaused = false;
   workBlockEndTime = null;
   localStorage.removeItem('workBlockEndTime');
+  localStorage.removeItem('resetTimerEndTime');
+  delete TIMER_END_TIMES[5];
   if (pomoNextTimeout) { clearTimeout(pomoNextTimeout); pomoNextTimeout = null; }
   if (workBlockCountdown) { clearInterval(workBlockCountdown); workBlockCountdown = null; }
   var sfb = document.getElementById('startFirstBlockRow');
@@ -1171,6 +1173,8 @@ function unchecResetStep() {
   }
   if (disp) disp.textContent = '5:00';
   if (TIMER_IDS[5]) { clearInterval(TIMER_IDS[5]); delete TIMER_IDS[5]; }
+  delete TIMER_END_TIMES[5];
+  localStorage.removeItem('resetTimerEndTime');
   TIMER_REM[5] = 300;
   persistSteps();
 }
@@ -1320,6 +1324,8 @@ function updateProgress() {
 }
 
 // ── Generic timers ────────────────────────────────────────────────
+var TIMER_END_TIMES = {}; // stores absolute end timestamps for backgrounding-safe timers
+
 function startTimer(e, idx, secs) {
   e.stopPropagation();
   // block reset timer if work block is actively running
@@ -1329,36 +1335,72 @@ function startTimer(e, idx, secs) {
     return;
   }
   if (TIMER_IDS[idx]) { clearInterval(TIMER_IDS[idx]); delete TIMER_IDS[idx]; }
-  TIMER_REM[idx] = secs;
   var btn = document.getElementById('tbtn-' + idx);
   var disp = document.getElementById('tdisp-' + idx);
   btn.textContent = 'Pause';
   btn.classList.add('timer-running');
-  TIMER_IDS[idx] = setInterval(function() {
-    TIMER_REM[idx]--;
-    var m = Math.floor(TIMER_REM[idx] / 60);
-    var s = TIMER_REM[idx] % 60;
-    disp.textContent = m + ':' + (s < 10 ? '0' : '') + s;
-    if (TIMER_REM[idx] <= 0) {
-      clearInterval(TIMER_IDS[idx]); delete TIMER_IDS[idx];
-      disp.textContent = '';
-      btn.textContent = 'Done ✓';
-      btn.classList.remove('timer-running');
-      btn.style.background = 'var(--teal-light)';
-      btn.style.color = 'var(--teal)';
-      btn.style.borderColor = 'var(--teal)';
-      applyDone(idx);
-      persistSteps();
-      updateProgress();
-      if (idx === 5) updateNextBlockBtn();
-    }
-  }, 1000);
+
+  // use timestamp-based countdown for reset timer (idx 5) so it survives backgrounding
+  if (idx === 5) {
+    TIMER_END_TIMES[idx] = Date.now() + (secs * 1000);
+    localStorage.setItem('resetTimerEndTime', TIMER_END_TIMES[idx].toString());
+    TIMER_IDS[idx] = setInterval(function() {
+      var remaining = Math.round((TIMER_END_TIMES[idx] - Date.now()) / 1000);
+      if (remaining <= 0) {
+        clearInterval(TIMER_IDS[idx]); delete TIMER_IDS[idx];
+        delete TIMER_END_TIMES[idx];
+        localStorage.removeItem('resetTimerEndTime');
+        disp.textContent = '';
+        btn.textContent = 'Done ✓';
+        btn.classList.remove('timer-running');
+        btn.style.background = 'var(--teal-light)';
+        btn.style.color = 'var(--teal)';
+        btn.style.borderColor = 'var(--teal)';
+        applyDone(idx);
+        persistSteps();
+        updateProgress();
+        updateNextBlockBtn();
+        return;
+      }
+      var m = Math.floor(remaining / 60);
+      var s = remaining % 60;
+      disp.textContent = m + ':' + (s < 10 ? '0' : '') + s;
+    }, 1000);
+  } else {
+    // tick-based for breath anchor and others
+    TIMER_REM[idx] = secs;
+    TIMER_IDS[idx] = setInterval(function() {
+      TIMER_REM[idx]--;
+      var m = Math.floor(TIMER_REM[idx] / 60);
+      var s = TIMER_REM[idx] % 60;
+      disp.textContent = m + ':' + (s < 10 ? '0' : '') + s;
+      if (TIMER_REM[idx] <= 0) {
+        clearInterval(TIMER_IDS[idx]); delete TIMER_IDS[idx];
+        disp.textContent = '';
+        btn.textContent = 'Done ✓';
+        btn.classList.remove('timer-running');
+        btn.style.background = 'var(--teal-light)';
+        btn.style.color = 'var(--teal)';
+        btn.style.borderColor = 'var(--teal)';
+        applyDone(idx);
+        persistSteps();
+        updateProgress();
+      }
+    }, 1000);
+  }
+
   btn.onclick = function(ev) {
     ev.stopPropagation();
     clearInterval(TIMER_IDS[idx]); delete TIMER_IDS[idx];
     btn.textContent = 'Resume';
     btn.classList.remove('timer-running');
-    btn.onclick = function(ev2) { ev2.stopPropagation(); startTimer(ev2, idx, TIMER_REM[idx]); };
+    if (idx === 5) {
+      // on resume, recalculate remaining from end timestamp
+      var remSecs = Math.max(0, Math.round((TIMER_END_TIMES[idx] - Date.now()) / 1000));
+      btn.onclick = function(ev2) { ev2.stopPropagation(); startTimer(ev2, idx, remSecs); };
+    } else {
+      btn.onclick = function(ev2) { ev2.stopPropagation(); startTimer(ev2, idx, TIMER_REM[idx]); };
+    }
   };
 }
 
