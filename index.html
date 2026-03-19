@@ -641,13 +641,6 @@
 
     <div class="phase-divider"><span>Evening</span></div>
 
-    <!-- Drive status -->
-    <div id="driveStatus" class="drive-status pending" style="display:none;">
-      <div class="drive-dot"></div>
-      <span id="driveStatusText">Not connected to Drive</span>
-      <button class="drive-connect-btn" id="driveConnectBtn" onclick="driveSignIn()">Connect</button>
-    </div>
-
     <!-- Mind dump card -->
     <div class="panel-card" id="mindDumpCard">
       <div class="panel-title">Mind dump</div>
@@ -657,7 +650,13 @@
         <div class="panel-desc" style="margin-bottom:6px;">Tomorrow I'm starting with...</div>
         <input class="intent-input" id="intentText" type="text" placeholder="One sentence — your first task tomorrow">
       </div>
-      <button class="save-btn" onclick="saveEvening()">Save &amp; close the day</button>
+      <!-- Drive connect lives here -->
+      <div id="driveStatus" class="drive-status pending" style="margin-top:12px;">
+        <div class="drive-dot"></div>
+        <span id="driveStatusText">Connect Drive to save</span>
+        <button class="drive-connect-btn" id="driveConnectBtn" onclick="driveSignIn()">Connect</button>
+      </div>
+      <button class="save-btn" id="saveEveningBtn" onclick="saveEvening()" style="opacity:0.35; cursor:not-allowed; margin-top:10px;">Save &amp; close the day</button>
     </div>
 
     <!-- Complete banner -->
@@ -820,6 +819,8 @@ function resetDayUI() {
   document.getElementById('mindDumpCard').style.display = 'block';
   document.getElementById('dumpText').value = '';
   document.getElementById('intentText').value = '';
+  // re-init Drive status for new day
+  initDrive();
   // Reset pomodoro state
   pomoCount = 0; pomoActive = false; pomoLunchPaused = false;
   workBlockEndTime = null;
@@ -1293,6 +1294,12 @@ function closeCycleForDay() {
 
 // ── Evening save ──────────────────────────────────────────────────
 function saveEvening() {
+  // hard gate — must be connected to Drive
+  var expiry = localStorage.getItem('driveTokenExpiry');
+  if (!driveAccessToken || !expiry || Date.now() >= parseInt(expiry) - 60000) {
+    setDriveStatus('pending', 'Connect Drive first');
+    return;
+  }
   var dump = document.getElementById('dumpText').value.trim();
   var intent = document.getElementById('intentText').value.trim();
   var state = getState();
@@ -1309,11 +1316,17 @@ function saveEvening() {
   updateProgress();
   updateStreakForToday();
   renderStreak();
-  // save to Drive in background
-  saveToDrive(today, intent, dump);
-  document.getElementById('mindDumpCard').style.display = 'none';
-  document.getElementById('completeCard').classList.add('show');
-  document.getElementById('completeCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  // save to Drive — keep card visible until confirmed
+  setDriveStatus('pending', 'Saving to Drive...');
+  saveToDrive(today, intent, dump).then(function() {
+    // only close card and show complete if Drive save succeeded
+    var driveText = document.getElementById('driveStatusText');
+    if (driveText && driveText.textContent.indexOf('✓') !== -1) {
+      document.getElementById('mindDumpCard').style.display = 'none';
+      document.getElementById('completeCard').classList.add('show');
+      document.getElementById('completeCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  });
 }
 
 // ── Progress ──────────────────────────────────────────────────────
@@ -1485,16 +1498,14 @@ var driveAccessToken = null;
 var driveFolderId = null;
 
 function initDrive() {
-  // show the status bar in the evening section
-  document.getElementById('driveStatus').style.display = 'flex';
-  // check if we have a stored token
   var stored = localStorage.getItem('driveToken');
   var expiry = localStorage.getItem('driveTokenExpiry');
-  if (stored && expiry && Date.now() < parseInt(expiry)) {
+  if (stored && expiry && Date.now() < parseInt(expiry) - 60000) {
     driveAccessToken = stored;
     setDriveStatus('connected', 'Drive connected');
   } else {
-    setDriveStatus('pending', 'Not connected to Drive');
+    driveAccessToken = null;
+    setDriveStatus('pending', 'Connect Drive to save');
   }
 }
 
@@ -1525,6 +1536,8 @@ function setDriveStatus(state, msg) {
   var el = document.getElementById('driveStatus');
   var txt = document.getElementById('driveStatusText');
   var btn = document.getElementById('driveConnectBtn');
+  var saveBtn = document.getElementById('saveEveningBtn');
+  if (!el) return;
   el.className = 'drive-status ' + (state === 'connected' ? '' : state === 'error' ? 'error' : 'pending');
   txt.textContent = msg;
   if (state === 'connected') {
@@ -1532,11 +1545,15 @@ function setDriveStatus(state, msg) {
     btn.onclick = null;
     btn.style.opacity = '0.5';
     btn.style.cursor = 'default';
+    // enable save button
+    if (saveBtn) { saveBtn.style.opacity = '1'; saveBtn.style.cursor = 'pointer'; }
   } else {
     btn.textContent = state === 'error' ? 'Retry' : 'Connect';
     btn.onclick = driveSignIn;
     btn.style.opacity = '1';
     btn.style.cursor = 'pointer';
+    // disable save button
+    if (saveBtn) { saveBtn.style.opacity = '0.35'; saveBtn.style.cursor = 'not-allowed'; }
   }
 }
 
