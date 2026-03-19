@@ -664,6 +664,7 @@
       <div class="complete-icon">✦</div>
       <div class="complete-title">Day complete.</div>
       <div class="complete-sub">Evening saved. Tomorrow's intention is set.<br>Close the notebook. You're done.</div>
+      <button onclick="reopenEvening()" style="margin-top:14px; padding:7px 18px; background:rgba(255,255,255,0.15); color:white; border:0.5px solid rgba(255,255,255,0.3); border-radius:var(--radius-sm); font-family:'DM Sans',sans-serif; font-size:13px; cursor:pointer;">Edit entry</button>
     </div>
 
   </div><!-- end today view -->
@@ -1316,17 +1317,27 @@ function saveEvening() {
   updateProgress();
   updateStreakForToday();
   renderStreak();
-  // save to Drive — keep card visible until confirmed
   setDriveStatus('pending', 'Saving to Drive...');
-  saveToDrive(today, intent, dump).then(function() {
-    // only close card and show complete if Drive save succeeded
-    var driveText = document.getElementById('driveStatusText');
-    if (driveText && driveText.textContent.indexOf('✓') !== -1) {
+  saveToDrive(today, intent, dump).then(function(success) {
+    if (success) {
       document.getElementById('mindDumpCard').style.display = 'none';
       document.getElementById('completeCard').classList.add('show');
       document.getElementById('completeCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
+    // on failure, card stays visible with error shown — user can retry
   });
+}
+
+function reopenEvening() {
+  document.getElementById('completeCard').classList.remove('show');
+  document.getElementById('mindDumpCard').style.display = 'block';
+  // reload saved text back into fields
+  var state = getState();
+  var today = todayKey();
+  var td = state[today] || {};
+  document.getElementById('dumpText').value = td.dump || '';
+  document.getElementById('intentText').value = td.intention || '';
+  document.getElementById('mindDumpCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 // ── Progress ──────────────────────────────────────────────────────
@@ -1545,14 +1556,18 @@ function setDriveStatus(state, msg) {
     btn.onclick = null;
     btn.style.opacity = '0.5';
     btn.style.cursor = 'default';
-    // enable save button
     if (saveBtn) { saveBtn.style.opacity = '1'; saveBtn.style.cursor = 'pointer'; }
-  } else {
-    btn.textContent = state === 'error' ? 'Retry' : 'Connect';
+  } else if (state === 'error') {
+    btn.textContent = 'Retry';
     btn.onclick = driveSignIn;
     btn.style.opacity = '1';
     btn.style.cursor = 'pointer';
-    // disable save button
+    if (saveBtn) { saveBtn.style.opacity = '1'; saveBtn.style.cursor = 'pointer'; }
+  } else {
+    btn.textContent = 'Connect';
+    btn.onclick = driveSignIn;
+    btn.style.opacity = '1';
+    btn.style.cursor = 'pointer';
     if (saveBtn) { saveBtn.style.opacity = '0.35'; saveBtn.style.cursor = 'not-allowed'; }
   }
 }
@@ -1658,12 +1673,15 @@ function saveToDrive(dateKey, intention, dump) {
   }).then(function(response) {
     if (response && (response.status === 200 || response.status === 201)) {
       setDriveStatus('connected', 'Saved to Drive ✓ — ' + dateKey);
+      return true;
     } else {
-      setDriveStatus('error', 'Drive save failed (status ' + (response ? response.status : '?') + ') — try reconnecting');
+      setDriveStatus('error', 'Drive save failed (status ' + (response ? response.status : '?') + ') — tap Retry');
+      return false;
     }
   }).catch(function(err) {
     console.error('Drive save failed:', err);
-    setDriveStatus('error', 'Drive save failed — check connection and reconnect');
+    setDriveStatus('error', 'Drive save failed — tap Retry');
+    return false;
   });
 }
 
